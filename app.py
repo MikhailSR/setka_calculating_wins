@@ -86,11 +86,10 @@ def calculate_transactions(dfs):
     return transactions
 
 
-st.title("SETKA CUP: расчёт метрик")
+st.title("SETKA: расчёт метрик")
 
 url1 = st.text_input(
-    "Ссылка на страницу турнира 1",
-    "https://tabletennis.setkacup.com/ru/schedule?hall=7&date=2026-09-30&period=2")
+    "Ссылка на страницу турнира 1")
 url2 = st.text_input("Ссылка на страницу турнира 2")
 url3 = st.text_input("Ссылка на страницу турнира 3")
 url4 = st.text_input("Ссылка на страницу турнира 4")
