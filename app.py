@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 import pandas as pd
 import streamlit as st
@@ -57,7 +58,7 @@ def calculate_transactions(dfs):
         for c_name, c_amt in list(creditors.items()):
             if d_amt == c_amt and d_amt > 0:
                 transactions.append(
-                    f"{d_name} отдает {d_amt:.0f} грн -> {c_name}")
+                    f"{d_name} {d_amt:.0f} грн -> {c_name}")
                 debtors[d_name] = 0
                 creditors[c_name] = 0
                 break
@@ -75,7 +76,7 @@ def calculate_transactions(dfs):
 
             amount = min(debtors[d_name], c_amt)
             transactions.append(
-                f"{d_name} отдает {amount:.0f} грн -> {c_name}")
+                f"{d_name} {amount:.0f} грн -> {c_name}")
 
             debtors[d_name] -= amount
             creditors[c_name] -= amount
@@ -87,36 +88,62 @@ def calculate_transactions(dfs):
 
 
 st.title("SETKA: расчёт метрик")
+col1, col2 = st.columns(2)
 
-url1 = st.text_input(
-    "Ссылка на страницу турнира 1")
-url2 = st.text_input("Ссылка на страницу турнира 2")
-url3 = st.text_input("Ссылка на страницу турнира 3")
-url4 = st.text_input("Ссылка на страницу турнира 4")
-url5 = st.text_input("Ссылка на страницу турнира 5")
+url1 = col1.text_input("Ссылка на страницу турнира 1")
+url2 = col1.text_input("Ссылка на страницу турнира 2")
+url3 = col1.text_input("Ссылка на страницу турнира 3")
+url4 = col1.text_input("Ссылка на страницу турнира 4")
+url5 = col1.text_input("Ссылка на страницу турнира 5")
 
-
-reward_win_uah = 100
+reward_win_uah = col2.number_input('Стоимость одной победы', value=100, step=50)
 everyone_wins = 2.5
 
 if st.button("Посчитать", type="primary"):
-    try:
-        urls = [url1, url2, url3, url4, url5]
-        tournaments = [load_tournament(url) for url in urls if url != ""]
-    except Exception as e:
-        st.error("Не удалось загрузить страницу")
-        st.code(str(e))
+    urls = [url1, url2, url3, url4, url5]
+    valid_urls = [url for url in urls if url.strip() != ""]  # <--- ДОБАВЛЕНО: фильтруем пустые
+
+    if not valid_urls:
+        st.warning("Турниры не найдены. Введите хотя бы одну ссылку.")
     else:
-        if not tournaments:
-            st.warning("Турниры не найдены")
-        for df in tournaments:
-            # Расчет и добавление новых столбцов
-            target_cols = ['_diag', 'vs_1', 'vs_2', 'vs_3', 'vs_4', 'vs_5']
-            df['Кол. побед'] = sum(df[col].str.startswith('3', na=False)
-                                   for col in target_cols)
-            df['Не хватает до 2,5'] = everyone_wins - df['Кол. побед']
-            df['Забрать/дать в деньгах'] = df['Не хватает до 2,5'] * reward_win_uah
+        all_dfs = []  # Сюда будем складывать все таблицы для финального расчета
 
-            st.dataframe(df, hide_index=True, width='content')
+        # === ИЗМЕНЕНО: Теперь мы идем циклом по ссылкам, чтобы знать, откуда какая таблица ===
+        for url in valid_urls:
+            try:
+                # 1. Загружаем данные
+                df = load_tournament(url)
 
-        st.write(calculate_transactions(tournaments))
+                # 2. Достаем дату из ссылки (например, ?date=2026-09-30)
+                parsed_url = urlparse(url)
+                query_params = parse_qs(parsed_url.query)
+                tournament_date = query_params.get('date', ['Без даты'])[0]
+
+                # 3. Выводим заголовок с датой перед таблицей
+                st.subheader(f"Турнир: {tournament_date}")
+
+                # Расчет и добавление новых столбцов
+                target_cols = ['_diag', 'vs_1', 'vs_2', 'vs_3', 'vs_4', 'vs_5']
+                df['Кол. побед'] = sum(df[col].str.startswith('3', na=False)
+                                       for col in target_cols if col in df.columns)  # Защита, если столбца нет
+                df['Не хватает до 2,5'] = everyone_wins - df['Кол. побед']
+                df['Забрать/дать в деньгах'] = df['Не хватает до 2,5'] * reward_win_uah
+
+                # Выводим таблицу
+                st.dataframe(df, hide_index=True, width='content')
+
+                # Выводим расчет ТОЛЬКО для этого турнира
+                st.write(calculate_transactions([df]))
+
+                # Сохраняем в общий список для итогового расчета
+                all_dfs.append(df)
+
+            except Exception as e:
+                st.error(f"Не удалось загрузить страницу: {url}")
+                st.code(str(e))
+
+        # === ИЗМЕНЕНО: Выводим общий итог в самом конце ===
+        if all_dfs:
+            st.divider()
+            st.subheader("Итоговый расчет по ВСЕМ турнирам:")
+            st.write(calculate_transactions(all_dfs))
