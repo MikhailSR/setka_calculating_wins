@@ -32,28 +32,50 @@ def load_tournament(url: str) -> pd.DataFrame:  # Изменили аннота�
 
 
 def calculate_transactions(dfs):
-    # === ЧТО ДОБАВЛЕНО: Шаг 0 ===
-    # 1. Объединяем список датафреймов в один общий
-    combined_df = pd.concat(dfs, ignore_index=True)
+    # === ЧТО ДОБАВЛЕНО: Шаг 0 (Предобработка) ===
+    processed_dfs = []
+    for df in dfs:
+        # Создаем копию, чтобы не менять исходный датафрейм
+        df_copy = df.copy()
+        
+        target_cols = [c for c in df_copy.columns if c.startswith('vs_')]
+        
+        # 1. Распределяем деньги за технические победы (W:L)
+        wl_count = 0
+        for col in target_cols:
+            if col in df_copy.columns:
+                # Ищем 'W:L' (убираем пробелы на случай, если написано 'W : L')
+                mask = df_copy[col].astype(str).str.replace(' ', '').str.upper() == 'W:L'
+                wl_count += mask.astype(int)
+                
+        # За каждую тех. победу игрок получает долю от "отсутствующего" (по 50 грн)
+        # Вычитаем эти 50 грн из его текущего баланса "Забрать/дать"
+        df_copy['Забрать/дать в деньгах'] -= wl_count * 50
+        
+        # 2. Исключаем игрока, который снялся (не пришел)
+        # Верный признак: у него 0 Очков в турнире
+        if 'Очки' in df_copy.columns:
+            # Оставляем только тех игроков, у которых Очки не равны нулю
+            df_copy = df_copy[pd.to_numeric(df_copy['Очки'], errors='coerce') != 0]
+            
+        processed_dfs.append(df_copy)
+        
+    # Склеиваем уже очищенные и пересчитанные таблицы
+    combined_df = pd.concat(processed_dfs, ignore_index=True)
+    # ==============================================
 
-    # 2. Группируем по имени игрока и суммируем их балансы за все турниры
-    # Это нужно, чтобы если игрок в одном турнире должен 100, а в другом ему должны 150,
-    # итоговый баланс составил +50.
+    # Группируем по имени игрока и суммируем их балансы за все турниры
     aggregated = combined_df.groupby('Игрок', as_index=False)['Забрать/дать в деньгах'].sum()
-    # ==============================
 
-    # === ЧТО ИЗМЕНЕНО ===
-    # Заменили `df` на `aggregated` в фильтрации
+    # Фильтрация должников и тех, кому должны
     debtors = aggregated[aggregated['Забрать/дать в деньгах'] <
                          0].set_index('Игрок')['Забрать/дать в деньгах'].abs().to_dict()
     creditors = aggregated[aggregated['Забрать/дать в деньгах'] >
                            0].set_index('Игрок')['Забрать/дать в деньгах'].to_dict()
-    # ====================
 
     transactions = []
 
-    # Шаг 1: Ищем точные совпадения (например, -250 и +250)
-    # (логика осталась без изменений)
+    # Шаг 1: Ищем точные совпадения
     for d_name, d_amt in list(debtors.items()):
         for c_name, c_amt in list(creditors.items()):
             if d_amt == c_amt and d_amt > 0:
@@ -67,8 +89,7 @@ def calculate_transactions(dfs):
     debtors = {k: v for k, v in debtors.items() if v > 0}
     creditors = {k: v for k, v in creditors.items() if v > 0}
 
-    # Шаг 2: Распределяем оставшиеся долги (если точных совпадений нет)
-    # (логика осталась без изменений)
+    # Шаг 2: Распределяем оставшиеся долги
     for d_name in list(debtors.keys()):
         while debtors[d_name] > 0 and creditors:
             c_name = list(creditors.keys())[0]
@@ -85,6 +106,7 @@ def calculate_transactions(dfs):
                 del creditors[c_name]
 
     return transactions
+
 
 
 st.title("SETKA: расчёт метрик")
