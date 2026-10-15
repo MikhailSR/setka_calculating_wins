@@ -9,15 +9,17 @@ def fetch_tournament(url: str) -> dict:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"))
         
-        # === ИЗМЕНЕНИЕ 1 ===
-        # Меняем wait_until на networkidle, чтобы дождаться окончания фоновых запросов
-        page.goto(url, wait_until="networkidle")
+        # === ДОБАВЛЕНО: Увеличиваем общий лимит времени до 60 секунд (вместо 30) ===
+        page.set_default_timeout(60000)
         
+        # === ИЗМЕНЕНО: Возвращаем domcontentloaded вместо networkidle ===
+        page.goto(url, wait_until="domcontentloaded")
+        
+        # Ждем саму таблицу
         page.wait_for_selector(
-            "table.tournament-results tbody tr.row", timeout=30000)
+            "table.tournament-results tbody tr.row")
 
-        # === ИЗМЕНЕНИЕ 2 ===
-        # Жестко ждем 2 секунды после появления таблицы, чтобы текст 100% отрисовался
+        # Наша спасительная пауза в 2 секунды для прогрузки текста JS-ом
         page.wait_for_timeout(2000)
 
         sec = page.query_selector("section.group-results")
