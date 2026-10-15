@@ -1,9 +1,6 @@
 import os
 
-# Принудительная установка браузера Chromium и системных библиотек 
-# Это обязательно для работы Playwright в Streamlit Cloud
 os.system("playwright install chromium")
-os.system("playwright install-deps chromium")
 
 import json
 import subprocess
